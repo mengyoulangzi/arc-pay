@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ArcPay — USDC Payments on Arc Testnet</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+<!-- QR code library -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+/* ════════════════════════════════════════
+   DESIGN TOKENS
+════════════════════════════════════════ */
+:root {
+  --arc:       #1a5fff;
+  --arc-h:     #1451e0;
+  --arc-dim:   #e8eeff;
+  --arc-mid:   #bfcfff;
+  --usdc:      #2775ca;
+  --usdc-dim:  #e8f1fb;
+  --ink:       #0b0b12;
+  --ink-2:     #52514e;
+  --ink-3:     #9a9890;
+  --surf:      #f4f4f2;
+  --card:      #ffffff;
+  --bd:        rgba(11,11,18,.10);
+  --bd-md:     rgba(11,11,18,.17);
+  --ok:        #0ca30c;
+  --ok-bg:     #e8f8e8;
+  --warn:      #e59700;
+  --warn-bg:   #fef8e8;
+  --err:       #d03b3b;
+  --err-bg:    #fdf0f0;
+  --r:         10px;
+  --r-lg:      16px;
+  --mono:      'SF Mono','Fira Mono','Consolas',monospace;
+  --sh:        0 1px 4px rgba(0,0,0,.06), 0 0 0 .5px var(--bd);
+}
+/* dark mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink:     #f0efe9;
+    --ink-2:   #a09e9a;
+    --ink-3:   #66645f;
+    --surf:    #131318;
+    --card:    #1c1c24;
+    --bd:      rgba(240,239,233,.09);
+    --bd-md:   rgba(240,239,233,.16);
+    --arc-dim: rgba(26,95,255,.18);
+    --arc-mid: rgba(26,95,255,.35);
+    --usdc-dim:rgba(39,117,202,.18);
+    --ok-bg:   rgba(12,163,12,.15);
+    --warn-bg: rgba(229,151,0,.15);
+    --err-bg:  rgba(208,59,59,.15);
+  }
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; }
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--surf); color: var(--ink);
+  line-height: 1.55; min-height: 100vh;
+}
+button { font-family: inherit; cursor: pointer; }
+input, textarea { font-family: inherit; color: var(--ink); }
+
+/* ════════════════════════════════════════
+   TOPBAR
+════════════════════════════════════════ */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 22px; height: 56px;
+  background: rgba(255,255,255,.88);
+  backdrop-filter: blur(14px);
+  border-bottom: .5px solid var(--bd);
+}
+@media (prefers-color-scheme: dark) {
+  .topbar { background: rgba(28,28,36,.88); }
+}
+.brand { display: flex; align-items: center; gap: 9px; }
+.brand-mark {
+  width: 32px; height: 32px; border-radius: 9px;
+  background: var(--arc);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 800; color: #fff; letter-spacing: -.5px;
+}
+.brand-name { font-size: 15px; font-weight: 700; }
+.brand-tag {
+  font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--arc); background: var(--arc-dim); border: .5px solid var(--arc-mid);
+  padding: 2px 8px; border-radius: 20px;
+}
+.tb-right { display: flex; align-items: center; gap: 9px; }
+.net-pill {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 11px; border-radius: 20px;
+  background: var(--card); border: .5px solid var(--bd-md);
+  font-size: 12px; font-weight: 500; color: var(--ink-2);
+}
+.net-dot { width: 6px; height: 6px; border-radius: 50%; background: #0ca30c; flex-shrink: 0; }
+.wallet-btn {
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 15px; border-radius: var(--r);
+  background: var(--arc); color: #fff; border: none;
+  font-size: 13px; font-weight: 600; transition: background .14s;
+}
+.wallet-btn:hover { background: var(--arc-h); }
+.wallet-btn.conn {
+  background: var(--card); color: var(--ink);
+  border: .5px solid var(--bd-md);
+}
+.wallet-btn.conn:hover { background: var(--surf); }
+
+/* ════════════════════════════════════════
+   PAGE GRID
+════════════════════════════════════════ */
+.page {
+  max-width: 980px; margin: 0 auto;
+  padding: 28px 18px 72px;
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  grid-template-rows: auto auto;
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 740px) {
+  .page { grid-template-columns: 1fr; }
+}
+
+/* ════════════════════════════════════════
+   CARD
+════════════════════════════════════════ */
+.card {
+  background: var(--card); border-radius: var(--r-lg);
+  border: .5px solid var(--bd); box-shadow: var(--sh); overflow: hidden;
+}
+
+/* ════════════════════════════════════════
+   CONNECT SCREEN
+════════════════════════════════════════ */
+.connect-screen {
+  grid-column: 1 / -1;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 72px 24px; text-align: center;
+}
+.cs-hexagon {
+  width: 72px; height: 72px; border-radius: 20px;
+  background: var(--arc-dim); border: .5px solid var(--arc-mid);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 32px; margin-bottom: 22px;
+}
+.cs-title { font-size: 24px; font-weight: 800; margin-bottom: 10px; }
+.cs-sub { font-size: 14px; color: var(--ink-2); max-width: 380px; line-height: 1.65; margin-bottom: 32px; }
+.cs-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 13px 30px; border-radius: var(--r);
+  background: var(--arc); color: #fff; border: none;
+  font-size: 15px; font-weight: 700; transition: background .14s;
+}
+.cs-btn:hover { background: var(--arc-h); }
+.cs-wallets { display: flex; gap: 8px; margin-top: 20px; flex-wrap: wrap; justify-content: center; }
+.cs-chip {
+  padding: 5px 13px; border-radius: 20px;
+  border: .5px solid var(--bd-md); font-size: 12px;
+  color: var(--ink-2); background: var(--card);
+}
+
+/* ════════════════════════════════════════
+   DISCLAIMER
+════════════════════════════════════════ */
+.disclaimer {
+  grid-column: 1 / -1;
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 15px; border-radius: var(--r);
+  background: var(--warn-bg); border: .5px solid rgba(229,151,0,.35);
+  font-size: 12px; color: #7a5500; line-height: 1.5;
+}
+@media (prefers-color-scheme: dark) {
+  .disclaimer { color: var(--warn); }
+}
+
+/* ════════════════════════════════════════
+   SEND/REQUEST CARD
+════════════════════════════════════════ */
+.card-head {
+  padding: 18px 22px 16px; border-bottom: .5px solid var(--bd);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.card-title { font-size: 16px; font-weight: 700; }
+.tabs {
+  display: flex; gap: 2px; padding: 3px;
+  background: var(--surf); border-radius: 8px;
+}
+.tab {
+  padding: 4px 14px; border-radius: 6px; border: none;
+  font-size: 12px; font-weight: 500; color: var(--ink-2);
+  background: transparent; transition: all .14s;
+}
+.tab.on {
+  background: var(--card); color: var(--ink);
+  box-shadow: 0 .5px 2px rgba(0,0,0,.13);
+}
+.card-body { padding: 22px; display: flex; flex-direction: column; gap: 18px; }
+
+/* ── Field ── */
+.field { display: flex; flex-direction: column; gap: 6px; }
+.flabel {
+  font-size: 11px; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.fsub { font-size: 11px; color: var(--ink-3); }
+
+/* ── Amount ── */
+.amt-wrap {
+  display: flex; align-items: stretch;
+  border: .5px solid var(--bd-md); border-radius: var(--r);
+  overflow: hidden; transition: border-color .15s;
+}
+.amt-wrap:focus-within {
+  border-color: var(--arc);
+  box-shadow: 0 0 0 3px rgba(26,95,255,.10);
+}
+.cur-tag {
+  display: flex; align-items: center; gap: 7px;
+  padding: 0 14px; background: var(--usdc-dim);
+  border-right: .5px solid var(--bd-md);
+  font-size: 13px; font-weight: 700; color: var(--usdc);
+  flex-shrink: 0; white-space: nowrap;
+}
+.usdc-coin {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--usdc);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 900; color: #fff;
+}
+#amt {
+  flex: 1; border: none; outline: none; background: transparent;
+  padding: 0 14px; font-size: 24px; font-weight: 700;
+  color: var(--ink); font-variant-numeric: tabular-nums;
+  height: 54px; min-width: 0;
+}
+#amt::placeholder { color: var(--ink-3); font-weight: 400; font-size: 20px; }
+.quick { display: flex; gap: 6px; flex-wrap: wrap; }
+.qbtn {
+  padding: 4px 11px; border-radius: 20px;
+  border: .5px solid var(--bd-md);
+  font-size: 12px; font-weight: 500; color: var(--ink-2);
+  background: var(--surf); transition: all .12s;
+}
+.qbtn:hover { border-color: var(--arc); color: var(--arc); background: var(--arc-dim); }
+
+/* ── Address ── */
+.addr-wrap {
+  display: flex; align-items: stretch;
+  border: .5px solid var(--bd-md); border-radius: var(--r);
+  overflow: hidden; transition: border-color .15s;
+}
+.addr-wrap:focus-within {
+  border-color: var(--arc);
+  box-shadow: 0 0 0 3px rgba(26,95,255,.10);
+}
+#addr {
+  flex: 1; border: none; outline: none; background: transparent;
+  padding: 0 12px; height: 44px; font-size: 13px;
+  color: var(--ink); font-family: var(--mono); min-width: 0;
+}
+#addr::placeholder { font-family: system-ui; }
+.paste-btn {
+  padding: 0 14px; border: none; border-left: .5px solid var(--bd-md);
+  background: var(--surf); font-size: 12px; font-weight: 600;
+  color: var(--arc); transition: background .12s; flex-shrink: 0;
+}
+.paste-btn:hover { background: var(--arc-dim); }
+
+/* contacts */
+.contacts { display: flex; flex-direction: column; gap: 2px; }
+.citem {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 8px; border-radius: 8px;
+  cursor: pointer; transition: background .12s;
+}
+.citem:hover { background: var(--surf); }
+.cavatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--arc-dim);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; color: var(--arc); flex-shrink: 0;
+}
+.cname { font-size: 13px; font-weight: 500; }
+.caddr { font-size: 11px; color: var(--ink-3); font-family: var(--mono); }
+.carr  { margin-left: auto; font-size: 12px; color: var(--ink-3); }
+
+/* ── Memo ── */
+#memo {
+  width: 100%; border: .5px solid var(--bd-md); border-radius: var(--r);
+  padding: 10px 12px; font-size: 13px; background: transparent;
+  outline: none; resize: none; height: 58px; line-height: 1.4;
+  transition: border-color .15s;
+}
+#memo:focus { border-color: var(--arc); box-shadow: 0 0 0 3px rgba(26,95,255,.10); }
+#memo::placeholder { color: var(--ink-3); }
+
+/* ── Fee ── */
+.fee-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 13px; border-radius: var(--r);
+  background: var(--surf); border: .5px dashed var(--bd-md);
+}
+.fee-l { font-size: 12px; color: var(--ink-2); }
+.fee-r { display: flex; align-items: center; gap: 6px; }
+.fee-v { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.fee-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px;
+  background: var(--ok-bg); color: var(--ok);
+}
+
+/* ── Approve row (shown when allowance insufficient) ── */
+.approve-row {
+  display: none; flex-direction: column; gap: 8px;
+  padding: 12px; border-radius: var(--r);
+  background: var(--warn-bg); border: .5px solid rgba(229,151,0,.35);
+}
+.approve-row.show { display: flex; }
+.approve-info { font-size: 12px; color: #7a5500; line-height: 1.5; }
+@media (prefers-color-scheme: dark) { .approve-info { color: var(--warn); } }
+.approve-btn {
+  align-self: flex-start;
+  padding: 7px 16px; border-radius: var(--r);
+  background: var(--warn); color: #fff; border: none;
+  font-size: 13px; font-weight: 600; transition: opacity .12s;
+}
+.approve-btn:hover { opacity: .88; }
+
+/* ── Send button ── */
+.send-btn {
+  width: 100%; height: 52px; border: none; border-radius: var(--r);
+  background: var(--arc); color: #fff;
+  font-size: 15px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: background .14s, transform .1s, opacity .14s;
+  position: relative; overflow: hidden;
+}
+.send-btn:hover:not(:disabled) { background: var(--arc-h); }
+.send-btn:active:not(:disabled) { transform: scale(.99); }
+.send-btn:disabled { opacity: .4; cursor: not-allowed; }
+.send-btn.ld::after {
+  content: ''; position: absolute;
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.35); border-top-color: #fff;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Security notice ── */
+.sec-notice {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--warn-bg); border: .5px solid rgba(229,151,0,.3);
+}
+.sec-text { font-size: 11px; color: #7a5500; line-height: 1.5; }
+@media (prefers-color-scheme: dark) { .sec-text { color: var(--warn); } }
+
+/* ════════════════════════════════════════
+   RECEIVE TAB
+════════════════════════════════════════ */
+.recv-body { padding: 24px 22px; }
+.qr-wrap {
+  display: flex; justify-content: center; margin-bottom: 18px;
+}
+#qr-box {
+  padding: 14px; background: #fff; border-radius: 12px;
+  border: .5px solid var(--bd); display: inline-block;
+}
+.recv-addr-box {
+  background: var(--surf); border-radius: var(--r);
+  padding: 12px 14px; font-size: 12px; font-family: var(--mono);
+  color: var(--ink-2); word-break: break-all;
+  text-align: center; margin-bottom: 14px; line-height: 1.6;
+}
+.recv-actions { display: flex; gap: 8px; }
+.recv-btn {
+  flex: 1; height: 42px; border-radius: var(--r); border: .5px solid var(--bd-md);
+  background: var(--card); font-size: 13px; font-weight: 600; color: var(--ink);
+  transition: background .12s;
+}
+.recv-btn:hover { background: var(--surf); }
+.recv-btn.primary { background: var(--arc); color: #fff; border: none; }
+.recv-btn.primary:hover { background: var(--arc-h); }
+
+/* ── Request (Invoice) tab ── */
+.req-body { padding: 22px; display: flex; flex-direction: column; gap: 16px; }
+.req-preview {
+  background: var(--surf); border-radius: var(--r);
+  border: .5px solid var(--bd); padding: 16px;
+  font-size: 12px; color: var(--ink-2); display: flex; flex-direction: column; gap: 6px;
+}
+.req-amount-preview { font-size: 22px; font-weight: 800; color: var(--ink); }
+.req-link-box {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--card); border: .5px solid var(--bd-md);
+  border-radius: 8px; padding: 9px 12px;
+}
+.req-link-text { flex: 1; font-size: 11px; font-family: var(--mono); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.req-copy-btn { font-size: 11px; font-weight: 700; color: var(--arc); border: none; background: none; flex-shrink: 0; }
+
+/* ════════════════════════════════════════
+   BALANCE CARD
+════════════════════════════════════════ */
+.bal-card {
+  background: var(--arc); border-radius: var(--r-lg);
+  padding: 20px 22px 22px; color: #fff;
+  position: relative; overflow: hidden;
+}
+.bal-card::before {
+  content: 'ARC';
+  position: absolute; right: -10px; top: -16px;
+  font-size: 100px; font-weight: 900; opacity: .07;
+  letter-spacing: -4px; user-select: none; pointer-events: none; line-height: 1;
+}
+.bal-ey { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; opacity: .65; margin-bottom: 8px; }
+.bal-amt { font-size: 36px; font-weight: 800; letter-spacing: -1.5px; font-variant-numeric: tabular-nums; line-height: 1; }
+.bal-unit { font-size: 14px; font-weight: 500; opacity: .7; margin-top: 3px; }
+.bal-addr-row {
+  margin-top: 16px; padding: 8px 12px; border-radius: 8px;
+  background: rgba(255,255,255,.15);
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.bal-addr-txt { font-size: 12px; font-family: var(--mono); opacity: .9; }
+.bal-copy { background: none; border: none; color: rgba(255,255,255,.65); font-size: 11px; font-weight: 600; }
+.bal-copy:hover { color: #fff; }
+.bal-fin {
+  margin-top: 10px; display: flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 600; opacity: .8;
+}
+.bal-fin-dot { width: 6px; height: 6px; border-radius: 50%; background: #4dffb4; flex-shrink: 0; }
+.bal-refresh {
+  margin-left: auto; background: rgba(255,255,255,.18); border: none;
+  color: #fff; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 600;
+}
+.bal-refresh:hover { background: rgba(255,255,255,.3); }
+
+/* ════════════════════════════════════════
+   NETWORK INFO
+════════════════════════════════════════ */
+.info-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 8px; }
+.info-section-label { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 2px; }
+.info-row { display: flex; align-items: center; justify-content: space-between; }
+.info-k { font-size: 11px; color: var(--ink-3); }
+.info-v { font-size: 11px; font-weight: 600; color: var(--ink); font-family: var(--mono); text-align: right; }
+.info-v a { color: var(--arc); font-family: inherit; text-decoration: none; }
+.info-v a:hover { text-decoration: underline; }
+
+/* ── Faucet helper ── */
+.faucet-box {
+  margin-top: 4px; padding: 12px 14px; border-radius: var(--r);
+  background: var(--arc-dim); border: .5px solid var(--arc-mid);
+}
+.faucet-title { font-size: 12px; font-weight: 700; color: var(--arc); margin-bottom: 4px; }
+.faucet-sub { font-size: 11px; color: var(--ink-2); line-height: 1.5; margin-bottom: 10px; }
+.faucet-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: var(--r);
+  background: var(--arc); color: #fff; border: none;
+  font-size: 12px; font-weight: 700; text-decoration: none;
+  transition: background .12s;
+}
+.faucet-btn:hover { background: var(--arc-h); }
+
+/* ════════════════════════════════════════
+   ACTIVITY CARD
+════════════════════════════════════════ */
+.act-head {
+  padding: 14px 18px 12px; border-bottom: .5px solid var(--bd);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.act-title { font-size: 14px; font-weight: 700; }
+.act-scan { font-size: 11px; font-weight: 600; color: var(--arc); cursor: pointer; padding: 3px 9px; background: var(--arc-dim); border-radius: 20px; border: .5px solid var(--arc-mid); }
+.tx-list { display: flex; flex-direction: column; }
+.tx-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 18px; border-bottom: .5px solid var(--bd);
+  cursor: pointer; transition: background .1s;
+}
+.tx-row:last-child { border-bottom: none; }
+.tx-row:hover { background: var(--surf); }
+.tx-ico {
+  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+}
+.tx-ico.out  { background: var(--arc-dim); color: var(--arc); }
+.tx-ico.in   { background: var(--ok-bg);   color: var(--ok); }
+.tx-ico.pend { background: var(--warn-bg); color: var(--warn); }
+.tx-meta { flex: 1; min-width: 0; }
+.tx-what { font-size: 12px; font-weight: 600; }
+.tx-sub  { font-size: 11px; color: var(--ink-3); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tx-right { text-align: right; flex-shrink: 0; }
+.tx-val { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tx-val.out { color: var(--ink); }
+.tx-val.in  { color: var(--ok); }
+.tx-when { font-size: 10px; color: var(--ink-3); margin-top: 2px; display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
+.sdot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+.sdot.fin  { background: var(--ok); }
+.sdot.pend { background: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+.empty-act { padding: 28px 18px; text-align: center; font-size: 12px; color: var(--ink-3); line-height: 1.6; }
+
+/* ════════════════════════════════════════
+   TOASTS
+════════════════════════════════════════ */
+.toast-area {
+  position: fixed; bottom: 24px; right: 24px; z-index: 300;
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+}
+.toast {
+  padding: 12px 16px; border-radius: 10px;
+  background: #1c1c24; color: #f0efe9;
+  font-size: 13px; font-weight: 500;
+  box-shadow: 0 4px 18px rgba(0,0,0,.22);
+  display: flex; align-items: center; gap: 8px;
+  pointer-events: auto; max-width: 320px;
+  animation: tUp .22s ease;
+}
+.toast.ok  { background: #0b5e0b; }
+.toast.err { background: var(--err); }
+@keyframes tUp { from { opacity:0; transform:translateY(10px); } }
+
+/* ════════════════════════════════════════
+   OVERLAYS / MODALS
+════════════════════════════════════════ */
+.overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(11,11,18,.55);
+  align-items: center; justify-content: center;
+  z-index: 100; padding: 16px;
+}
+.overlay.open { display: flex; }
+
+/* ── Confirm ── */
+.cm {
+  background: var(--card); border-radius: 18px;
+  width: 388px; max-width: 100%;
+  box-shadow: 0 14px 44px rgba(0,0,0,.22); overflow: hidden;
+}
+.cm-head {
+  padding: 26px 24px 20px; text-align: center;
+  border-bottom: .5px solid var(--bd);
+}
+.cm-icon {
+  width: 56px; height: 56px; border-radius: 16px;
+  background: var(--arc-dim); font-size: 26px;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 14px;
+}
+.cm-title { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+.cm-sub   { font-size: 12px; color: var(--ink-2); }
+.cm-body  { padding: 20px 24px; }
+.cm-rows  { border-radius: var(--r); overflow: hidden; border: .5px solid var(--bd); margin-bottom: 14px; }
+.cmr {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 10px 14px; gap: 12px; border-bottom: .5px solid var(--bd);
+}
+.cmr:last-child { border-bottom: none; }
+.cmk { font-size: 12px; color: var(--ink-2); flex-shrink: 0; }
+.cmv { font-size: 12px; font-weight: 600; text-align: right; font-family: var(--mono); word-break: break-all; }
+.cmv.big { font-size: 17px; color: var(--arc); font-family: inherit; letter-spacing: -.5px; }
+.cmv.nm  { font-family: inherit; font-weight: 400; color: var(--ink-2); }
+.fin-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 9px 12px; border-radius: 8px;
+  background: var(--ok-bg); font-size: 11px; font-weight: 600; color: #1a6e1a;
+  margin-bottom: 16px;
+}
+@media (prefers-color-scheme: dark) { .fin-row { color: var(--ok); } }
+.cm-actions { display: flex; gap: 10px; }
+.btn-cancel {
+  flex: 1; height: 46px; border: .5px solid var(--bd-md);
+  border-radius: var(--r); background: var(--card);
+  font-size: 14px; font-weight: 500; color: var(--ink-2);
+  transition: background .12s;
+}
+.btn-cancel:hover { background: var(--surf); }
+.btn-ok {
+  flex: 2; height: 46px; border: none; border-radius: var(--r);
+  background: var(--arc); color: #fff; font-size: 14px; font-weight: 700;
+  transition: background .12s; position: relative; overflow: hidden;
+}
+.btn-ok:hover { background: var(--arc-h); }
+.btn-ok.ld { pointer-events: none; }
+.btn-ok.ld span { opacity: 0; }
+.btn-ok.ld::after {
+  content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.35); border-top-color: #fff;
+  animation: spin .7s linear infinite;
+}
+
+/* ── Success ── */
+.sm {
+  background: var(--card); border-radius: 18px;
+  width: 360px; max-width: 100%;
+  padding: 34px 24px 24px; text-align: center;
+  box-shadow: 0 14px 44px rgba(0,0,0,.22);
+}
+.s-ring {
+  width: 68px; height: 68px; border-radius: 50%;
+  border: 2.5px solid var(--ok);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 30px; margin: 0 auto 18px;
+  animation: popIn .4s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes popIn { from { transform:scale(.5); opacity:0; } }
+.s-title { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
+.s-sub   { font-size: 13px; color: var(--ink-2); margin-bottom: 20px; }
+.s-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 20px;
+  background: var(--ok-bg); font-size: 12px; font-weight: 700; color: var(--ok);
+  margin-bottom: 20px;
+}
+.hash-box {
+  background: var(--surf); border-radius: 8px;
+  padding: 10px 12px; display: flex; align-items: center; gap: 8px;
+  margin-bottom: 20px;
+}
+.hash-txt { font-size: 11px; font-family: var(--mono); color: var(--ink-2); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.copy-h { font-size: 11px; font-weight: 700; color: var(--arc); border: none; background: none; flex-shrink: 0; }
+.s-acts { display: flex; flex-direction: column; gap: 8px; }
+.s-exp {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; height: 44px; border-radius: var(--r);
+  border: .5px solid var(--arc); color: var(--arc);
+  font-size: 13px; font-weight: 700; background: transparent;
+  transition: background .12s;
+}
+.s-exp:hover { background: var(--arc-dim); }
+.s-done {
+  width: 100%; height: 42px; border-radius: var(--r);
+  border: none; background: var(--surf); color: var(--ink-2);
+  font-size: 13px; font-weight: 500; transition: background .12s;
+}
+.s-done:hover { background: var(--bd); }
+
+/* ── Error ── */
+.em {
+  background: var(--card); border-radius: 18px;
+  width: 360px; max-width: 100%;
+  padding: 28px 24px; text-align: center;
+  box-shadow: 0 14px 44px rgba(0,0,0,.22);
+}
+.em-icon  { font-size: 42px; margin-bottom: 14px; }
+.em-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; color: var(--err); }
+.em-msg   { font-size: 13px; color: var(--ink-2); margin-bottom: 22px; line-height: 1.55; }
+.em-close {
+  width: 100%; height: 44px; border-radius: var(--r);
+  border: .5px solid var(--bd-md); background: var(--card);
+  font-size: 14px; font-weight: 500; color: var(--ink-2);
+  transition: background .12s;
+}
+.em-close:hover { background: var(--surf); }
+
+/* ════════════════════════════════════════
+   MOBILE TWEAKS
+════════════════════════════════════════ */
+@media (max-width: 740px) {
+  .topbar { padding: 0 14px; }
+  .net-pill { display: none; }
+  .page { padding: 16px 12px 56px; }
+  .bal-amt { font-size: 28px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════ TOPBAR ══════ -->
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">A</div>
+    <span class="brand-name">ArcPay</span>
+    <span class="brand-tag">Testnet</span>
+  </div>
+  <div class="tb-right">
+    <div class="net-pill">
+      <div class="net-dot"></div>
+      Arc Testnet · 5042002
+    </div>
+    <button class="wallet-btn" id="wb" onclick="toggleWallet()">
+      <span id="wlabel">Connect wallet</span>
+    </button>
+  </div>
+</header>
+
+<!-- ══════ TOASTS ══════ -->
+<div class="toast-area" id="toasts"></div>
+
+<!-- ══════════════════════════════════════
+     OVERLAYS
+══════════════════════════════════════ -->
+
+<!-- Confirm -->
+<div class="overlay" id="ov-confirm">
+  <div class="cm">
+    <div class="cm-head">
+      <div class="cm-icon">↑</div>
+      <div class="cm-title">Confirm payment</div>
+      <div class="cm-sub">Review carefully — blockchain payments are irreversible</div>
+    </div>
+    <div class="cm-body">
+      <div class="cm-rows">
+        <div class="cmr"><span class="cmk">Amount</span><span class="cmv big" id="c-amt">—</span></div>
+        <div class="cmr"><span class="cmk">To</span><span class="cmv" id="c-to">—</span></div>
+        <div class="cmr"><span class="cmk">Memo</span><span class="cmv nm" id="c-memo">—</span></div>
+        <div class="cmr"><span class="cmk">Gas fee</span><span class="cmv" id="c-fee">—</span></div>
+        <div class="cmr"><span class="cmk" style="font-weight:700;color:var(--ink)">Total</span><span class="cmv big" id="c-total">—</span></div>
+      </div>
+      <div class="fin-row">⚡ Arc finalizes in &lt;350ms — no block confirmations needed</div>
+      <div class="cm-actions">
+        <button class="btn-cancel" onclick="closeOverlay('ov-confirm')">Cancel</button>
+        <button class="btn-ok" id="btn-ok" onclick="executeSend()"><span>Sign &amp; send</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Success -->
+<div class="overlay" id="ov-success">
+  <div class="sm">
+    <div class="s-ring">✓</div>
+    <div class="s-title">Payment sent</div>
+    <div class="s-sub" id="s-sub">—</div>
+    <div class="s-badge"><span>⚡</span> Finalized · Arc Testnet</div>
+    <div class="hash-box">
+      <div class="hash-txt" id="s-hash">—</div>
+      <button class="copy-h" onclick="copyHash()">Copy</button>
+    </div>
+    <div class="s-acts">
+      <button class="s-exp" onclick="openExplorer()">View on ArcScan ↗</button>
+      <button class="s-done" onclick="closeDone()">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Error -->
+<div class="overlay" id="ov-error">
+  <div class="em">
+    <div class="em-icon">⚠️</div>
+    <div class="em-title" id="em-title">Error</div>
+    <div class="em-msg" id="em-msg">—</div>
+    <button class="em-close" onclick="closeOverlay('ov-error')">Close</button>
+  </div>
+</div>
+
+<!-- ══════ PAGE ══════ -->
+<div class="page" id="page">
+
+  <!-- ── Connect screen ── -->
+  <div class="connect-screen" id="cs">
+    <div class="cs-hexagon">⬡</div>
+    <div class="cs-title">Connect your wallet</div>
+    <div class="cs-sub">
+      Send USDC instantly on Arc Testnet.<br>
+      Finality in under 350ms. Gas paid in USDC — not ETH.
+    </div>
+    <button class="cs-btn" onclick="toggleWallet()">
+      <span>⬡</span> Connect wallet
+    </button>
+    <div class="cs-wallets">
+      <div class="cs-chip">MetaMask</div>
+      <div class="cs-chip">Rabby</div>
+      <div class="cs-chip">Coinbase Wallet</div>
+      <div class="cs-chip">WalletConnect</div>
+    </div>
+  </div>
+
+  <!-- ── Main UI (hidden until connected) ── -->
+  <div id="mui" style="display:none;contents">
+
+    <!-- Testnet disclaimer -->
+    <div class="disclaimer">
+      <span style="font-size:14px;flex-shrink:0">⚠</span>
+      <span>
+        <strong>Testnet only.</strong> Không dùng USDC thật. Arc Testnet (Chain&nbsp;ID&nbsp;5042002) chỉ dùng để kiểm thử.
+        ArcPay không bao giờ yêu cầu seed phrase hoặc private key của bạn.
+      </span>
+    </div>
+
+    <!-- ════ SEND / RECEIVE / REQUEST CARD ════ -->
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title" id="card-title">Send payment</span>
+        <div class="tabs">
+          <button class="tab on" onclick="setTab('send',this)">Send</button>
+          <button class="tab"    onclick="setTab('receive',this)">Receive</button>
+          <button class="tab"    onclick="setTab('request',this)">Request</button>
+        </div>
+      </div>
+
+      <!-- ─── SEND ─── -->
+      <div id="tab-send" class="card-body">
+
+        <!-- Amount -->
+        <div class="field">
+          <div class="flabel">Amount</div>
+          <div class="amt-wrap">
+            <div class="cur-tag">
+              <div class="usdc-coin">$</div>
+              USDC
+            </div>
+            <input id="amt" type="number" placeholder="0.00" min="0" step="0.01" oninput="onAmt()">
+          </div>
+          <div class="quick">
+            <button class="qbtn" onclick="qAmt(10)">10</button>
+            <button class="qbtn" onclick="qAmt(50)">50</button>
+            <button class="qbtn" onclick="qAmt(100)">100</button>
+            <button class="qbtn" onclick="qAmt(500)">500</button>
+            <button class="qbtn" onclick="qMax()">Max</button>
+          </div>
+          <div class="fsub" id="amt-sub">Enter amount · gas is paid in USDC</div>
+        </div>
+
+        <!-- To -->
+        <div class="field">
+          <div class="flabel">To address</div>
+          <div class="addr-wrap">
+            <input id="addr" type="text" placeholder="0x… recipient address" oninput="onAddr()">
+            <button class="paste-btn" onclick="pasteAddr()">Paste</button>
+          </div>
+          <!-- Contacts -->
+          <div class="contacts">
+            <div class="citem" onclick="pickContact('0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B','Merchant A')">
+              <div class="cavatar">MA</div>
+              <div><div class="cname">Merchant A</div><div class="caddr">0xAb58…eC9B</div></div>
+              <div class="carr">→</div>
+            </div>
+            <div class="citem" onclick="pickContact('0x742d35Cc6634C0532925a3b844Bc454e4438f44e','Treasury')">
+              <div class="cavatar">TR</div>
+              <div><div class="cname">Treasury</div><div class="caddr">0x742d…f44e</div></div>
+              <div class="carr">→</div>
+            </div>
+            <div class="citem" onclick="pickContact('0x71C7656EC7ab88b098defB751B7401B5f6d8976F','Dev Wallet')">
+              <div class="cavatar">DW</div>
+              <div><div class="cname">Dev Wallet</div><div class="caddr">0x71C7…976F</div></div>
+              <div class="carr">→</div>
+            </div>
+          </div>
+          <div class="fsub" id="addr-sub">Paste an address or pick a contact above</div>
+        </div>
+
+        <!-- Memo -->
+        <div class="field">
+          <div class="flabel">Memo <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink-3)">(optional · stored on-chain)</span></div>
+          <textarea id="memo" placeholder="e.g. Invoice #042, order reference…"></textarea>
+        </div>
+
+        <!-- Approve row (shown when router allowance < amount) -->
+        <div class="approve-row" id="approve-row">
+          <div class="approve-info">
+            ⚠ <strong>Approve required.</strong> The PaymentRouter contract needs your permission
+            to spend USDC on your behalf. This is a one-time approval step. Gas applies.
+          </div>
+          <button class="approve-btn" onclick="doApprove()">Approve USDC spending</button>
+        </div>
+
+        <!-- Fee -->
+        <div class="fee-row">
+          <span class="fee-l">Estimated gas fee</span>
+          <div class="fee-r">
+            <span class="fee-v" id="fee-v">≈ 0.002 USDC</span>
+            <span class="fee-badge">Deterministic</span>
+          </div>
+        </div>
+
+        <!-- Send btn -->
+        <button class="send-btn" id="send-btn" onclick="openConfirm()" disabled>
+          <span>↑</span>
+          <span id="send-lbl">Connect wallet first</span>
+        </button>
+
+        <!-- Security -->
+        <div class="sec-notice">
+          <span style="font-size:14px;flex-shrink:0">⚠</span>
+          <span class="sec-text">
+            Verify the recipient address carefully — transactions are irreversible.
+            ArcPay will never ask for your seed phrase or private key.
+          </span>
+        </div>
+      </div>
+
+      <!-- ─── RECEIVE ─── -->
+      <div id="tab-receive" class="recv-body" style="display:none">
+        <div class="qr-wrap"><div id="qr-box"></div></div>
+        <div class="recv-addr-box" id="recv-addr">Not connected</div>
+        <div class="recv-actions">
+          <button class="recv-btn" onclick="copyMyAddr()">Copy address</button>
+          <button class="recv-btn primary" onclick="openExplorerAddr()">View on ArcScan</button>
+        </div>
+        <div class="sec-notice" style="margin-top:14px">
+          <span style="font-size:14px;flex-shrink:0">⚠</span>
+          <span class="sec-text">Share only your wallet address — never your seed phrase or private key.</span>
+        </div>
+      </div>
+
+      <!-- ─── REQUEST / INVOICE ─── -->
+      <div id="tab-request" class="req-body" style="display:none">
+        <div class="field">
+          <div class="flabel">Amount to request</div>
+          <div class="amt-wrap">
+            <div class="cur-tag"><div class="usdc-coin">$</div>USDC</div>
+            <input id="req-amt" type="number" placeholder="0.00" min="0" step="0.01" oninput="buildReqLink()">
+          </div>
+        </div>
+        <div class="field">
+          <div class="flabel">Note / invoice ref</div>
+          <textarea id="req-note" placeholder="e.g. Invoice #007, monthly retainer…" style="width:100%;border:.5px solid var(--bd-md);border-radius:var(--r);padding:10px 12px;font-size:13px;background:transparent;outline:none;resize:none;height:54px;line-height:1.4;transition:border-color .15s;" oninput="buildReqLink()"></textarea>
+        </div>
+
+        <!-- Preview -->
+        <div class="req-preview">
+          <div style="font-size:11px;color:var(--ink-3);margin-bottom:4px">Preview</div>
+          <div class="req-amount-preview" id="req-preview-amt">0.00 USDC</div>
+          <div id="req-preview-note" style="margin-top:4px;color:var(--ink-2);font-size:12px;">—</div>
+          <div style="font-size:11px;color:var(--ink-3);margin-top:6px;">To: <span id="req-preview-to" style="font-family:var(--mono)">your address</span></div>
+        </div>
+
+        <!-- Payment link -->
+        <div class="field">
+          <div class="flabel">Payment link</div>
+          <div class="req-link-box">
+            <div class="req-link-text" id="req-link">Fill in amount to generate link</div>
+            <button class="req-copy-btn" onclick="copyReqLink()">Copy</button>
+          </div>
+          <div class="fsub">Share this link — payers open it and their wallet auto-fills the payment.</div>
+        </div>
+
+        <!-- QR for request -->
+        <div class="field">
+          <div class="flabel">QR code</div>
+          <div style="display:flex;justify-content:center;">
+            <div id="req-qr-box" style="padding:12px;background:#fff;border-radius:10px;border:.5px solid var(--bd);display:inline-block;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- /send-receive-request card -->
+
+    <!-- ════ RIGHT COLUMN ════ -->
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <!-- Balance card -->
+      <div class="bal-card">
+        <div class="bal-ey">USDC Balance</div>
+        <div class="bal-amt" id="bal-amt">—</div>
+        <div class="bal-unit">USDC · Arc Testnet</div>
+        <div class="bal-addr-row">
+          <span class="bal-addr-txt" id="bal-addr">Not connected</span>
+          <button class="bal-copy" onclick="copyMyAddr()">Copy</button>
+        </div>
+        <div class="bal-fin">
+          <div class="bal-fin-dot"></div>
+          Finality &lt;350ms
+          <button class="bal-refresh" onclick="refreshBal()">↻ Refresh</button>
+        </div>
+      </div>
+
+      <!-- Network info + faucet -->
+      <div class="card">
+        <div class="info-body">
+          <div class="info-section-label">Network</div>
+          <div class="info-row"><span class="info-k">Name</span><span class="info-v">Arc Testnet</span></div>
+          <div class="info-row"><span class="info-k">Chain ID</span><span class="info-v">5042002</span></div>
+          <div class="info-row"><span class="info-k">RPC</span><span class="info-v" style="font-size:10px;">rpc.testnet.arc.network</span></div>
+          <div class="info-row"><span class="info-k">USDC</span><span class="info-v" style="font-size:10px;">0x3600…0000</span></div>
+          <div class="info-row"><span class="info-k">Explorer</span><span class="info-v"><a href="https://testnet.arcscan.app" target="_blank" rel="noopener">ArcScan ↗</a></span></div>
+          <div class="info-row"><span class="info-k">Consensus</span><span class="info-v" style="font-family:inherit;">Tendermint BFT</span></div>
+
+          <div class="faucet-box">
+            <div class="faucet-title">🚰 Need testnet USDC?</div>
+            <div class="faucet-sub">
+              Get free USDC on Arc Testnet from Circle's official faucet.
+              You'll need to connect and select "Arc Testnet" on the faucet page.
+            </div>
+            <a class="faucet-btn" href="https://faucet.circle.com" target="_blank" rel="noopener">
+              Open Circle Faucet ↗
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Activity -->
+      <div class="card">
+        <div class="act-head">
+          <span class="act-title">Recent activity</span>
+          <span class="act-scan" onclick="openExplorerAddr()">ArcScan ↗</span>
+        </div>
+        <div class="tx-list" id="tx-list">
+          <div class="empty-act">No transactions yet.<br>Send your first payment above.</div>
+        </div>
+      </div>
+    </div>
+    <!-- /right col -->
+
+  </div><!-- /main-ui -->
+</div><!-- /page -->
+
+<!-- ══════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════ -->
+<script>
+/* ═══════════════════════════════════════════
+   CONSTANTS
+═══════════════════════════════════════════ */
+const CHAIN_ID     = 5042002;
+const CHAIN_HEX    = '0x' + (5042002).toString(16);   // 0x4CEB12
+const RPC_URL      = 'https://rpc.testnet.arc.network';
+const EXPLORER     = 'https://testnet.arcscan.app';
+const USDC_ADDR    = '0x3600000000000000000000000000000000000000';
+const USDC_DEC     = 6;
+const MIN_GAS_GWEI = 20n;
+const STORAGE_KEY  = 'arcpay_txhistory_v2';
+
+const ERC20_ABI = [
+  'function balanceOf(address) view returns (uint256)',
+  'function transfer(address to, uint256 amount) returns (bool)',
+  'function allowance(address owner, address spender) view returns (uint256)',
+  'function approve(address spender, uint256 amount) returns (bool)',
+];
+
+/* ═══════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════ */
+let provider   = null;
+let signer     = null;
+let userAddr   = '';
+let userBal    = 0n;
+let lastTxHash = '';
+let pendingFee = 0n;
+let pendingAmt = 0n;
+let qrInstance = null;
+let reqQrInst  = null;
+let feeTimer   = null;
+let txHistory  = (() => {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
+})();
+
+/* ═══════════════════════════════════════════
+   WALLET — CONNECT / DISCONNECT
+═══════════════════════════════════════════ */
+async function toggleWallet() {
+  if (userAddr) { disconnectWallet(); return; }
+
+  if (!window.ethereum) {
+    errModal('No wallet detected',
+      'Please install MetaMask or Rabby browser extension, then reload this page.');
+    return;
+  }
+
+  try {
+    /* 1. Ask user to unlock & select account */
+    const accs = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    if (!accs || !accs.length) throw new Error('No account selected.');
+
+    /* 2. Switch to / add Arc Testnet — raw RPC, no ethers.js yet */
+    await switchToArc();
+
+    /* 3. Build provider + signer now that we are on the right chain */
+    provider = new ethers.BrowserProvider(window.ethereum);
+    signer   = await provider.getSigner();
+    userAddr = await signer.getAddress();
+
+    /* 4. Balance fetch is best-effort — don't block UI if RPC is slow */
+    setTimeout(() => refreshBal().catch(() => {}), 800);
+
+    onConnected();
+  } catch (e) {
+    handleErr(e, 'connect');
+  }
+}
+
+async function switchToArc() {
+  const current = await window.ethereum.request({ method: 'eth_chainId' });
+  if (parseInt(current, 16) === CHAIN_ID) return;   // already there
+
+  try {
+    await window.ethereum.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: CHAIN_HEX }],
+    });
+  } catch (switchErr) {
+    if (switchErr.code !== 4902 && switchErr.code !== -32603) throw switchErr;
+    /* Chain not in wallet yet — add it, wallet auto-switches after */
+    await window.ethereum.request({
+      method: 'wallet_addEthereumChain',
+      params: [{
+        chainId: CHAIN_HEX,
+        chainName: 'Arc Testnet',
+        nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+        rpcUrls: [RPC_URL],
+        blockExplorerUrls: [EXPLORER],
+      }],
+    });
+  }
+}
+
+function disconnectWallet() {
+  userAddr = ''; signer = null; provider = null; userBal = 0n;
+  onDisconnected();
+}
+
+function onConnected() {
+  /* Topbar */
+  const btn = document.getElementById('wb');
+  btn.classList.add('conn');
+  document.getElementById('wlabel').textContent = shortAddr(userAddr);
+
+  /* Show main UI */
+  document.getElementById('cs').style.display  = 'none';
+  document.getElementById('mui').style.display = 'contents';
+
+  /* Populate address fields */
+  document.getElementById('bal-addr').textContent  = shortAddr(userAddr);
+  document.getElementById('recv-addr').textContent = userAddr;
+  if (document.getElementById('req-preview-to'))
+    document.getElementById('req-preview-to').textContent = shortAddr(userAddr);
+
+  /* Build QR for receive tab */
+  buildQR(userAddr);
+
+  /* Wallet event listeners (add once) */
+  window.ethereum.removeAllListeners?.('accountsChanged');
+  window.ethereum.removeAllListeners?.('chainChanged');
+  window.ethereum.on('accountsChanged', accs => {
+    if (!accs.length) disconnectWallet();
+    else { userAddr = accs[0]; onConnected(); refreshBal().catch(() => {}); }
+  });
+  window.ethereum.on('chainChanged', () => location.reload());
+
+  renderHistory();
+  updateSendBtn();
+}
+
+function onDisconnected() {
+  document.getElementById('wb').classList.remove('conn');
+  document.getElementById('wlabel').textContent    = 'Connect wallet';
+  document.getElementById('cs').style.display      = '';
+  document.getElementById('mui').style.display     = 'none';
+  document.getElementById('bal-amt').textContent   = '—';
+  document.getElementById('bal-addr').textContent  = 'Not connected';
+}
+
+/* ═══════════════════════════════════════════
+   BALANCE
+═══════════════════════════════════════════ */
+async function refreshBal() {
+  if (!provider || !userAddr) return;
+  try {
+    const ct  = new ethers.Contract(USDC_ADDR, ERC20_ABI, provider);
+    userBal   = await ct.balanceOf(userAddr);
+    const fmt = fmtUsdc(userBal);
+    document.getElementById('bal-amt').textContent = fmt;
+    document.getElementById('amt-sub').textContent = `Balance: ${fmt} USDC · gas paid in USDC`;
+  } catch { /* testnet RPC hiccup — silently ignore */ }
+}
+
+/* ═══════════════════════════════════════════
+   GAS ESTIMATE
+═══════════════════════════════════════════ */
+async function estimateGas(to, rawAmt) {
+  if (!provider || !userAddr) return defaultFee();
+  try {
+    const iface = new ethers.Interface(ERC20_ABI);
+    const data  = iface.encodeFunctionData('transfer', [to, rawAmt]);
+    const gl    = await provider.estimateGas({ from: userAddr, to: USDC_ADDR, data });
+    const fd    = await provider.getFeeData();
+    const gp    = (fd.gasPrice ?? 0n) > MIN_GAS_GWEI * 10n ** 9n
+                  ? fd.gasPrice : MIN_GAS_GWEI * 10n ** 9n;
+    return gl * gp;
+  } catch { return defaultFee(); }
+}
+const defaultFee = () => 21000n * MIN_GAS_GWEI * 10n ** 9n;
+
+/* native-18dec fee → USDC-6dec display */
+function feeDisplay(wei) {
+  const micro = wei / 10n ** 12n;
+  return fmtUsdc(micro);
+}
+
+/* ═══════════════════════════════════════════
+   SEND FLOW
+═══════════════════════════════════════════ */
+function onAmt() {
+  updateSendBtn();
+  clearTimeout(feeTimer);
+  feeTimer = setTimeout(doFeeEstimate, 700);
+}
+function onAddr() { updateSendBtn(); }
+
+async function doFeeEstimate() {
+  const a = parseFloat(document.getElementById('amt').value) || 0;
+  const r = document.getElementById('addr').value.trim();
+  if (a > 0 && r.length >= 40 && provider) {
+    pendingFee = await estimateGas(r, usdcRaw(a));
+    document.getElementById('fee-v').textContent = '≈ ' + feeDisplay(pendingFee) + ' USDC';
+  }
+}
+
+function updateSendBtn() {
+  const a   = parseFloat(document.getElementById('amt').value) || 0;
+  const r   = document.getElementById('addr').value.trim();
+  const ok  = a > 0 && r.length >= 40 && !!signer;
+  const btn = document.getElementById('send-btn');
+  const lbl = document.getElementById('send-lbl');
+  btn.disabled    = !ok;
+  lbl.textContent = !signer       ? 'Connect wallet first'
+                  : a <= 0        ? 'Enter an amount'
+                  : r.length < 40 ? 'Enter recipient address'
+                  : 'Send USDC';
+}
+
+function openConfirm() {
+  const a = parseFloat(document.getElementById('amt').value);
+  const r = document.getElementById('addr').value.trim();
+  const m = document.getElementById('memo').value.trim();
+  if (!a || !r) return;
+
+  pendingAmt = usdcRaw(a);
+  document.getElementById('c-amt').textContent   = a.toFixed(2) + ' USDC';
+  document.getElementById('c-to').textContent    = r;
+  document.getElementById('c-memo').textContent  = m || '(none)';
+  document.getElementById('c-fee').textContent   = '≈ ' + feeDisplay(pendingFee) + ' USDC';
+  document.getElementById('c-total').textContent = (a + Number(feeDisplay(pendingFee))).toFixed(4) + ' USDC';
+  openOverlay('ov-confirm');
+}
+
+async function executeSend() {
+  const r   = document.getElementById('addr').value.trim();
+  const m   = document.getElementById('memo').value.trim();
+  const btn = document.getElementById('btn-ok');
+
+  btn.classList.add('ld');
+  btn.querySelector('span').style.opacity = '0';
+
+  try {
+    const ct = new ethers.Contract(USDC_ADDR, ERC20_ABI, signer);
+    const tx = await ct.transfer(r, pendingAmt, { gasLimit: 100000n });
+
+    closeOverlay('ov-confirm');
+    lastTxHash = tx.hash;
+
+    /* Push as pending immediately */
+    const rec = {
+      type: 'out', label: 'Sent', to: r,
+      amount: fmtUsdc(pendingAmt), hash: tx.hash,
+      memo: m, ts: Date.now(), status: 'pending'
+    };
+    pushHistory(rec);
+
+    /* Wait for finality (Arc: ~1 block, <350ms) */
+    await tx.wait(1);
+    rec.status = 'final';
+    saveHistory();
+    renderHistory();
+    await refreshBal().catch(() => {});
+
+    /* Show success */
+    document.getElementById('s-sub').textContent  = `${fmtUsdc(pendingAmt)} USDC sent to ${shortAddr(r)}`;
+    document.getElementById('s-hash').textContent = tx.hash;
+    openOverlay('ov-success');
+
+    /* Reset form */
+    document.getElementById('amt').value  = '';
+    document.getElementById('addr').value = '';
+    document.getElementById('memo').value = '';
+    updateSendBtn();
+
+  } catch (e) {
+    closeOverlay('ov-confirm');
+    handleErr(e, 'send');
+  } finally {
+    btn.classList.remove('ld');
+    btn.querySelector('span').style.opacity = '1';
+  }
+}
+
+/* ═══════════════════════════════════════════
+   TX HISTORY
+═══════════════════════════════════════════ */
+function pushHistory(tx) {
+  txHistory.unshift(tx);
+  saveHistory();
+  renderHistory();
+}
+function saveHistory() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(txHistory.slice(0, 50))); } catch {}
+}
+function renderHistory() {
+  const el = document.getElementById('tx-list');
+  if (!txHistory.length) {
+    el.innerHTML = '<div class="empty-act">No transactions yet.<br>Send your first payment above.</div>';
+    return;
+  }
+  el.innerHTML = txHistory.map(tx => `
+    <div class="tx-row" onclick="openTx('${tx.hash}')">
+      <div class="tx-ico ${tx.type === 'in' ? 'in' : tx.status === 'pending' ? 'pend' : 'out'}">
+        ${tx.type === 'in' ? '↓' : tx.status === 'pending' ? '⏳' : '↑'}
+      </div>
+      <div class="tx-meta">
+        <div class="tx-what">${tx.label} · ${shortAddr(tx.to)}</div>
+        <div class="tx-sub">${tx.memo || tx.hash}</div>
+      </div>
+      <div class="tx-right">
+        <div class="tx-val ${tx.type}">${tx.type === 'in' ? '+' : '-'}${tx.amount} USDC</div>
+        <div class="tx-when">
+          <span class="sdot ${tx.status === 'pending' ? 'pend' : 'fin'}"></span>
+          ${tx.status === 'pending' ? 'Pending' : timeAgo(tx.ts)}
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+/* ═══════════════════════════════════════════
+   TABS
+═══════════════════════════════════════════ */
+function setTab(id, btn) {
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  ['send', 'receive', 'request'].forEach(t => {
+    document.getElementById('tab-' + t).style.display = t === id ? '' : 'none';
+  });
+  const titles = { send: 'Send payment', receive: 'Receive USDC', request: 'Request payment' };
+  document.getElementById('card-title').textContent = titles[id];
+  if (id === 'request') buildReqLink();
+}
+
+/* ═══════════════════════════════════════════
+   REQUEST / INVOICE TAB
+═══════════════════════════════════════════ */
+function buildReqLink() {
+  const a    = parseFloat(document.getElementById('req-amt').value) || 0;
+  const note = document.getElementById('req-note').value.trim();
+  if (document.getElementById('req-preview-amt'))
+    document.getElementById('req-preview-amt').textContent = a.toFixed(2) + ' USDC';
+  if (document.getElementById('req-preview-note'))
+    document.getElementById('req-preview-note').textContent = note || '—';
+
+  if (a > 0 && userAddr) {
+    const p = new URLSearchParams({ address: userAddr, amount: a.toFixed(6), token: USDC_ADDR, chain: CHAIN_ID });
+    if (note) p.set('memo', note);
+    const link = window.location.origin + window.location.pathname + '?' + p.toString();
+    document.getElementById('req-link').textContent = link;
+
+    const box = document.getElementById('req-qr-box');
+    box.innerHTML = '';
+    try {
+      reqQrInst = new QRCode(box, {
+        text: link, width: 130, height: 130,
+        colorDark: '#0b0b12', colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    } catch {}
+  } else {
+    if (document.getElementById('req-link'))
+      document.getElementById('req-link').textContent = 'Fill in amount to generate link';
+  }
+}
+
+function copyReqLink() {
+  const t = document.getElementById('req-link').textContent;
+  if (t && !t.startsWith('Fill'))
+    navigator.clipboard.writeText(t).then(() => toast('Payment link copied', 'ok'));
+}
+
+/* ═══════════════════════════════════════════
+   QR CODE (receive tab)
+═══════════════════════════════════════════ */
+function buildQR(addr) {
+  const box = document.getElementById('qr-box');
+  if (!box) return;
+  box.innerHTML = '';
+  try {
+    qrInstance = new QRCode(box, {
+      text: addr, width: 160, height: 160,
+      colorDark: '#0b0b12', colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  } catch {
+    box.textContent = shortAddr(addr);
+  }
+}
+
+/* ═══════════════════════════════════════════
+   AUTO-FILL FROM REQUEST LINK (?address=&amount=)
+═══════════════════════════════════════════ */
+function checkReqParams() {
+  const p = new URLSearchParams(window.location.search);
+  if (p.has('amount') && p.has('address')) {
+    document.getElementById('amt').value  = p.get('amount');
+    document.getElementById('addr').value = p.get('address');
+    if (p.has('memo')) document.getElementById('memo').value = p.get('memo');
+    updateSendBtn();
+    toast('Payment request loaded — verify details before sending');
+  }
+}
+
+/* ═══════════════════════════════════════════
+   APPROVE (USDC allowance for future router)
+═══════════════════════════════════════════ */
+async function doApprove() {
+  try {
+    const ct = new ethers.Contract(USDC_ADDR, ERC20_ABI, signer);
+    const tx = await ct.approve('0x0000000000000000000000000000000000000000', ethers.MaxUint256);
+    toast('Approval sent…');
+    await tx.wait(1);
+    toast('USDC spending approved ✓', 'ok');
+    document.getElementById('approve-row').classList.remove('show');
+  } catch (e) { handleErr(e, 'approve'); }
+}
+
+/* ═══════════════════════════════════════════
+   SMALL HELPERS
+═══════════════════════════════════════════ */
+function qAmt(n)    { document.getElementById('amt').value = n; onAmt(); }
+function qMax()     { if (userBal) { document.getElementById('amt').value = (Number(userBal) / 10 ** USDC_DEC).toFixed(2); onAmt(); } }
+function onAddr2()  { onAddr(); }
+
+async function pasteAddr() {
+  try {
+    const t = await navigator.clipboard.readText();
+    document.getElementById('addr').value = t.trim();
+    onAddr(); doFeeEstimate();
+  } catch { toast('Could not read clipboard — paste manually', 'err'); }
+}
+
+function pickContact(addr, name) {
+  document.getElementById('addr').value = addr;
+  document.getElementById('addr-sub').textContent = 'Selected: ' + name;
+  onAddr(); doFeeEstimate();
+}
+
+function copyMyAddr() {
+  if (userAddr) navigator.clipboard.writeText(userAddr).then(() => toast('Address copied', 'ok'));
+}
+function copyHash() {
+  const h = document.getElementById('s-hash').textContent;
+  navigator.clipboard.writeText(h).then(() => toast('Tx hash copied', 'ok'));
+}
+function openExplorer()     { if (lastTxHash) window.open(EXPLORER + '/tx/' + lastTxHash, '_blank', 'noopener'); }
+function openExplorerAddr() { if (userAddr) window.open(EXPLORER + '/address/' + userAddr, '_blank', 'noopener'); }
+function openTx(hash)       { if (hash) window.open(EXPLORER + '/tx/' + hash, '_blank', 'noopener'); }
+function closeDone()        { closeOverlay('ov-success'); }
+
+/* Overlays */
+function openOverlay(id)  { document.getElementById(id).classList.add('open'); }
+function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
+
+/* ═══════════════════════════════════════════
+   ERROR HANDLING
+═══════════════════════════════════════════ */
+function errModal(title, msg) {
+  document.getElementById('em-title').textContent = title;
+  document.getElementById('em-msg').textContent   = msg;
+  openOverlay('ov-error');
+}
+
+function handleErr(e, ctx) {
+  const code = e?.code ?? e?.error?.code ?? e?.data?.code;
+  let msg;
+
+  if (code === 4001 || e?.message?.toLowerCase().includes('user rejected') || e?.message?.toLowerCase().includes('user denied'))
+    msg = 'You cancelled the request in your wallet. Try again when ready.';
+  else if (code === 4902)
+    msg = 'Arc Testnet is not in your wallet yet. Try connecting again — it will be added automatically.';
+  else if (code === -32002)
+    msg = 'A wallet request is already pending. Open your wallet extension and approve or reject it first.';
+  else if (code === -32603)
+    msg = 'Your wallet returned an internal error. Try refreshing the page, then reconnect your wallet.';
+  else if (e?.message?.includes('insufficient') || e?.message?.includes('gas'))
+    msg = 'Insufficient USDC for gas. Get testnet USDC from faucet.circle.com first.';
+  else if (e?.message)
+    msg = e.message.length > 280 ? e.message.slice(0, 280) + '…' : e.message;
+  else
+    msg = 'Something went wrong. Please try again.';
+
+  const titles = { connect: 'Could not connect', send: 'Transaction failed', approve: 'Approval failed' };
+  errModal(titles[ctx] || 'Error', msg);
+}
+
+/* ═══════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════ */
+function toast(msg, type = '') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3800);
+}
+
+/* ═══════════════════════════════════════════
+   FORMAT UTILS
+═══════════════════════════════════════════ */
+function usdcRaw(n)  { return BigInt(Math.round(n * 10 ** USDC_DEC)); }
+function fmtUsdc(r)  { return (Number(r) / 10 ** USDC_DEC).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function shortAddr(a){ return (!a || a.length < 10) ? a : a.slice(0, 6) + '…' + a.slice(-4); }
+function timeAgo(ts) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60)   return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  return Math.floor(s / 3600) + 'h ago';
+}
+
+/* ═══════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════ */
+updateSendBtn();
+
+/* Poll balance every 15s when connected */
+setInterval(() => { if (signer) refreshBal().catch(() => {}); }, 15000);
+
+/* Auto-fill from request URL params */
+window.addEventListener('load', checkReqParams);
+
+/* Close overlay on backdrop click */
+document.querySelectorAll('.overlay').forEach(o =>
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); })
+);
+</script>
+</body>
+</html>
