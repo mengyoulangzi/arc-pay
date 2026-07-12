@@ -2130,10 +2130,48 @@ async function executeSwap() {
     await tx.wait(1);
     rec.status = 'final';
     saveHistory(); renderHistory();
-    _refreshAllBals().catch(function(){});
+
+    /* ── Optimistic balance update ──────────────────────────────────────
+       Dummy tx chỉ chuyển 0.001 USDC nên chain balance thay đổi rất ít.
+       Cập nhật TOKENS[].bal ngay theo số liệu swap để UI phản ánh đúng.
+       Sau đó refresh từ chain để đồng bộ số thật.
+    ─────────────────────────────────────────────────────────────────── */
+    var minReceived = toAmt * (1 - swapSlip / 100);
+    var fromRaw = BigInt(Math.round(fromAmt * Math.pow(10, swapFrom.dec)));
+    var toRaw   = BigInt(Math.round(minReceived * Math.pow(10, swapTo.dec)));
+
+    /* Trừ fromToken */
+    if (swapFrom.bal !== null) {
+      swapFrom.bal = swapFrom.bal > fromRaw ? swapFrom.bal - fromRaw : 0n;
+    }
+    /* Cộng toToken */
+    if (swapTo.bal !== null) {
+      swapTo.bal = swapTo.bal + toRaw;
+    }
+
+    /* Nếu USDC là token nguồn hoặc đích, cập nhật cả main balance card */
+    if (swapFrom.symbol === 'USDC') {
+      userBal = userBal > fromRaw ? userBal - fromRaw : 0n;
+      var fmt = fmtUsdc(userBal);
+      document.getElementById('bal-amt').textContent = fmt;
+      document.getElementById('amt-sub').textContent = 'Balance: ' + fmt + ' USDC · gas paid in USDC';
+      document.getElementById('wd-bal').textContent  = fmt;
+    } else if (swapTo.symbol === 'USDC') {
+      userBal = userBal + toRaw;
+      var fmt2 = fmtUsdc(userBal);
+      document.getElementById('bal-amt').textContent = fmt2;
+      document.getElementById('amt-sub').textContent = 'Balance: ' + fmt2 + ' USDC · gas paid in USDC';
+      document.getElementById('wd-bal').textContent  = fmt2;
+    }
+
+    /* Cập nhật swap balance display ngay */
+    _updateSwapBalDisplay();
+
+    /* Sau 2s refresh thật từ chain để đồng bộ */
+    setTimeout(function() { _refreshAllBals().catch(function(){}); }, 2000);
 
     document.getElementById('ss-sub').textContent  = fromAmt.toFixed(4) + ' ' + swapFrom.symbol
-      + ' \u2192 ' + (toAmt * (1 - swapSlip/100)).toFixed(4) + ' ' + swapTo.symbol;
+      + ' \u2192 ' + minReceived.toFixed(4) + ' ' + swapTo.symbol;
     document.getElementById('ss-hash').textContent = tx.hash;
     openOverlay('ov-swap-success');
 
