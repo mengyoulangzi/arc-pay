@@ -1496,6 +1496,7 @@ let feeTimer = null;
 let swapFrom = TOKENS[0], swapTo = TOKENS[1];
 let swapSlip = 0.1, swapRate = null, swapPickFor = 'from';
 let swapLastTxHash = '', rateExpiry = 0;
+let _balRefreshPaused = false; /* true for 4s after swap to protect optimistic values */
 let txHistory = (function() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
   catch(e) { return []; }
@@ -1670,6 +1671,7 @@ document.addEventListener('click', function(e) {
 ════════════════════════════════════════════════════════ */
 async function _refreshAllBals() {
   if (!provider || !userAddr) return;
+  if (_balRefreshPaused) return; /* skip during optimistic window */
   try {
     /* USDC main balance */
     var ct  = new ethers.Contract(USDC_ADDR, ERC20_ABI, provider);
@@ -2114,16 +2116,25 @@ async function executeSwap() {
   if (!fromAmt || !signer) return;
   var btn = document.getElementById('swap-confirm-btn');
   btn.classList.add('ld'); btn.querySelector('span').style.opacity = '0';
+
+  /* Snapshot token symbols BEFORE any state change */
+  var snapFromSym = swapFrom.symbol;
+  var snapToSym   = swapTo.symbol;
+  var snapFromDec = swapFrom.dec;
+  var snapToDec   = swapTo.dec;
+
   try {
-    /* Testnet: real tx via tiny self-transfer so ArcScan shows it */
+    /* Testnet: tiny self-transfer to produce a real tx hash on ArcScan */
     var ct = new ethers.Contract(USDC_ADDR, ERC20_ABI, signer);
     var tx = await ct.transfer(userAddr, BigInt(1000), { gasLimit: 100000n });
     closeOverlay('ov-swap-confirm');
     swapLastTxHash = tx.hash;
 
     var toAmt = parseFloat(document.getElementById('swap-to-amt').value) || 0;
-    var rec = { type:'swap', label:'Swap ' + swapFrom.symbol + '\u2192' + swapTo.symbol,
-      to: userAddr, amount: fromAmt.toFixed(4) + ' ' + swapFrom.symbol,
+    var minReceived = toAmt * (1 - swapSlip / 100);
+
+    var rec = { type:'swap', label:'Swap ' + snapFromSym + '→' + snapToSym,
+      to: userAddr, amount: fromAmt.toFixed(4) + ' ' + snapFromSym,
       hash: tx.hash, memo: 'Via StableFX', ts: Date.now(), status: 'pending' };
     pushHistory(rec);
 
@@ -2131,53 +2142,64 @@ async function executeSwap() {
     rec.status = 'final';
     saveHistory(); renderHistory();
 
-    /* ── Optimistic balance update ──────────────────────────────────────
-       Dummy tx chỉ chuyển 0.001 USDC nên chain balance thay đổi rất ít.
-       Cập nhật TOKENS[].bal ngay theo số liệu swap để UI phản ánh đúng.
-       Sau đó refresh từ chain để đồng bộ số thật.
+    /* ── Optimistic balance update ───────────────────────────────────────
+       Dummy tx không thay đổi chain balance thật.
+       Tìm đúng object trong TOKENS[] theo symbol (không dùng reference
+       swapFrom/swapTo vì chúng có thể bị gán lại bởi flipSwap/selectToken).
+       Ghi trực tiếp vào TOKENS[i].bal để _refreshAllBals cũng thấy.
     ─────────────────────────────────────────────────────────────────── */
-    var minReceived = toAmt * (1 - swapSlip / 100);
-    var fromRaw = BigInt(Math.round(fromAmt * Math.pow(10, swapFrom.dec)));
-    var toRaw   = BigInt(Math.round(minReceived * Math.pow(10, swapTo.dec)));
+    var fromRaw = BigInt(Math.round(fromAmt    * Math.pow(10, snapFromDec)));
+    var toRaw   = BigInt(Math.round(minReceived * Math.pow(10, snapToDec)));
 
-    /* Trừ fromToken */
-    if (swapFrom.bal !== null) {
-      swapFrom.bal = swapFrom.bal > fromRaw ? swapFrom.bal - fromRaw : 0n;
-    }
-    /* Cộng toToken */
-    if (swapTo.bal !== null) {
-      swapTo.bal = swapTo.bal + toRaw;
+    /* Update TOKENS array in-place by symbol */
+    for (var i = 0; i < TOKENS.length; i++) {
+      if (TOKENS[i].symbol === snapFromSym && TOKENS[i].bal !== null) {
+        TOKENS[i].bal = TOKENS[i].bal > fromRaw ? TOKENS[i].bal - fromRaw : 0n;
+      }
+      if (TOKENS[i].symbol === snapToSym && TOKENS[i].bal !== null) {
+        TOKENS[i].bal = TOKENS[i].bal + toRaw;
+      }
     }
 
-    /* Nếu USDC là token nguồn hoặc đích, cập nhật cả main balance card */
-    if (swapFrom.symbol === 'USDC') {
+    /* Sync swapFrom / swapTo references with updated TOKENS entries */
+    for (var j = 0; j < TOKENS.length; j++) {
+      if (TOKENS[j].symbol === swapFrom.symbol) swapFrom = TOKENS[j];
+      if (TOKENS[j].symbol === swapTo.symbol)   swapTo   = TOKENS[j];
+    }
+
+    /* Update main USDC balance card */
+    if (snapFromSym === 'USDC') {
       userBal = userBal > fromRaw ? userBal - fromRaw : 0n;
-      var fmt = fmtUsdc(userBal);
-      document.getElementById('bal-amt').textContent = fmt;
-      document.getElementById('amt-sub').textContent = 'Balance: ' + fmt + ' USDC · gas paid in USDC';
-      document.getElementById('wd-bal').textContent  = fmt;
-    } else if (swapTo.symbol === 'USDC') {
+    } else if (snapToSym === 'USDC') {
       userBal = userBal + toRaw;
-      var fmt2 = fmtUsdc(userBal);
-      document.getElementById('bal-amt').textContent = fmt2;
-      document.getElementById('amt-sub').textContent = 'Balance: ' + fmt2 + ' USDC · gas paid in USDC';
-      document.getElementById('wd-bal').textContent  = fmt2;
     }
+    var fmtBal = fmtUsdc(userBal);
+    document.getElementById('bal-amt').textContent = fmtBal;
+    document.getElementById('amt-sub').textContent = 'Balance: ' + fmtBal + ' USDC · gas paid in USDC';
+    document.getElementById('wd-bal').textContent  = fmtBal;
 
-    /* Cập nhật swap balance display ngay */
+    /* Update swap panel balances immediately */
     _updateSwapBalDisplay();
 
-    /* Sau 2s refresh thật từ chain để đồng bộ */
-    setTimeout(function() { _refreshAllBals().catch(function(){}); }, 2000);
-
-    document.getElementById('ss-sub').textContent  = fromAmt.toFixed(4) + ' ' + swapFrom.symbol
-      + ' \u2192 ' + minReceived.toFixed(4) + ' ' + swapTo.symbol;
+    /* Show success modal */
+    document.getElementById('ss-sub').textContent  =
+      fromAmt.toFixed(4) + ' ' + snapFromSym + ' → ' + minReceived.toFixed(4) + ' ' + snapToSym;
     document.getElementById('ss-hash').textContent = tx.hash;
     openOverlay('ov-swap-success');
 
+    /* Reset inputs */
     document.getElementById('swap-from-amt').value = '';
     document.getElementById('swap-to-amt').value   = '';
     _updateSwapDetails(0, 0);
+
+    /* Pause auto-refresh for 4s to protect optimistic values,
+       then do one real chain read to sync */
+    _balRefreshPaused = true;
+    setTimeout(function() {
+      _balRefreshPaused = false;
+      _refreshAllBals().catch(function(){});
+    }, 4000);
+
   } catch(e) {
     closeOverlay('ov-swap-confirm');
     handleErr(e, 'send');
