@@ -796,6 +796,17 @@ a:hover { text-decoration: underline; }
   .page { gap: 16px; }
 }
 
+.swap-pct-row {
+  display: flex; gap: 5px; margin-top: 8px;
+}
+.swap-pct-btn {
+  flex: 1; padding: 4px 0; border-radius: 20px;
+  border: .5px solid var(--arc-border);
+  font-size: 11px; font-weight: 700; color: var(--arc-bright);
+  background: var(--arc-dim); cursor: pointer; transition: all .12s;
+}
+.swap-pct-btn:hover { background: rgba(59,130,246,.25); }
+
 /* ════════════════════════════════════════════
    SWAP TAB
 ════════════════════════════════════════════ */
@@ -1172,17 +1183,17 @@ a:hover { text-decoration: underline; }
     <!-- Send / Receive / Request card -->
     <div class="card glow">
       <div class="card-head">
-        <span class="card-title" id="card-title">Send payment</span>
+        <span class="card-title" id="card-title">Swap tokens</span>
         <div class="tabs">
-          <button class="tab on" onclick="setTab('send',this)">Send</button>
+          <button class="tab on" onclick="setTab('swap',this)">⇄ Swap</button>
+          <button class="tab"    onclick="setTab('send',this)">Send</button>
           <button class="tab"    onclick="setTab('receive',this)">Receive</button>
           <button class="tab"    onclick="setTab('request',this)">Request</button>
-          <button class="tab"    onclick="setTab('swap',this)">⇄ Swap</button>
         </div>
       </div>
 
       <!-- SEND -->
-      <div id="tab-send" class="card-body">
+      <div id="tab-send" class="card-body" style="display:none">
         <div class="field">
           <div class="flabel">Amount</div>
           <div class="amt-wrap">
@@ -1296,7 +1307,7 @@ a:hover { text-decoration: underline; }
       </div>
 
       <!-- SWAP TAB -->
-      <div id="tab-swap" class="swap-body" style="display:none">
+      <div id="tab-swap" class="swap-body">
 
         <!-- From token -->
         <div class="token-box" id="swap-from-box">
@@ -1310,7 +1321,13 @@ a:hover { text-decoration: underline; }
             <input class="swap-amount-input" id="swap-from-amt" type="number" placeholder="0.00" min="0" step="0.01" oninput="onSwapInput('from')">
           </div>
           <div class="token-bal">
-            Balance: <span id="from-bal" onclick="swapSetMax()">—</span>
+            Balance: <span id="from-bal">—</span>
+          </div>
+          <div class="swap-pct-row">
+            <button class="swap-pct-btn" onclick="swapSetPct(25)">25%</button>
+            <button class="swap-pct-btn" onclick="swapSetPct(50)">50%</button>
+            <button class="swap-pct-btn" onclick="swapSetPct(75)">75%</button>
+            <button class="swap-pct-btn" onclick="swapSetPct(100)">Max</button>
           </div>
         </div>
 
@@ -1994,8 +2011,19 @@ function flipSwap() {
 }
 
 function swapSetMax() {
+  swapSetPct(100);
+}
+function swapSetPct(pct) {
   if (!swapFrom.bal) return;
-  document.getElementById('swap-from-amt').value = (Number(swapFrom.bal) / Math.pow(10, swapFrom.dec)).toFixed(4);
+  var max = Number(swapFrom.bal) / Math.pow(10, swapFrom.dec);
+  var amt = max * pct / 100;
+  document.getElementById('swap-from-amt').value = amt.toFixed(4);
+  /* Highlight active pct button */
+  document.querySelectorAll('.swap-pct-btn').forEach(function(b) {
+    var label = b.textContent === 'Max' ? '100' : b.textContent.replace('%','');
+    b.style.background = label === String(pct) ? 'rgba(59,130,246,.4)' : '';
+    b.style.borderColor = label === String(pct) ? 'var(--arc-bright)' : '';
+  });
   onSwapInput('from');
 }
 
@@ -2226,7 +2254,11 @@ document.querySelectorAll('.overlay').forEach(function(o) {
 });
 
 /* Auto-fill from payment request URL */
-window.addEventListener('load', function() { checkReqParams(); });
+window.addEventListener('load', function() {
+  checkReqParams();
+  /* Init swap tab as default */
+  _initSwapTab().catch(function(){});
+});
 
 /* Auto-reconnect if wallet was previously connected (no popup) */
 window.addEventListener('load', async function() {
@@ -2247,5 +2279,36 @@ window.addEventListener('load', async function() {
   }
 });
 </script>
+
+<!-- ══════ FOOTER ══════ -->
+<footer style="
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  padding: 10px 24px;
+  background: rgba(10,10,15,.85);
+  backdrop-filter: blur(16px);
+  border-top: .5px solid rgba(255,255,255,.07);
+  font-size: 12px; color: rgba(255,255,255,.35);
+">
+  <span style="font-size:11px;letter-spacing:.05em;">Built on Arc Testnet</span>
+  <span style="opacity:.3;">·</span>
+  <a href="https://x.com/lanqiuzhiwang" target="_blank" rel="noopener"
+     style="display:flex;align-items:center;gap:5px;color:rgba(255,255,255,.5);text-decoration:none;transition:color .14s;"
+     onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(255,255,255,.5)'">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.63zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+    </svg>
+    @lanqiuzhiwang
+  </a>
+  <span style="opacity:.3;">·</span>
+  <a href="https://github.com/mengyoulangzi" target="_blank" rel="noopener"
+     style="display:flex;align-items:center;gap:5px;color:rgba(255,255,255,.5);text-decoration:none;transition:color .14s;"
+     onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(255,255,255,.5)'">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2z"/>
+    </svg>
+    mengyoulangzi
+  </a>
+</footer>
 </body>
 </html>
